@@ -1,98 +1,378 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Redis Message Queue System with NestJS
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A sophisticated message queue system built with NestJS and Redis, featuring priority-based message processing, duplicate detection, and comprehensive message lifecycle management.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Features
 
-## Description
+- **Priority-based Message Queues**: Support for URGENT, HIGH, NORMAL, and LOW priority messages
+- **Duplicate Detection**: Prevents duplicate messages using Redis Sets
+- **Message Lifecycle Management**: Track messages through PENDING → PROCESSING → COMPLETED/FAILED states
+- **Retry Mechanism**: Automatic retry support for failed messages (up to 3 attempts)
+- **Queue Statistics**: Real-time statistics and monitoring
+- **Type-Safe**: Full TypeScript support with proper type guards
+- **RESTful API**: Clean REST endpoints for all operations
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 📋 Prerequisites
 
-## Project setup
+- Node.js (v16 or higher)
+- Redis Server (v6 or higher)
+- npm or yarn
 
-```bash
-$ npm install
+## 🛠️ Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd redis-message-queue
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Start Redis server**
+   
+   **macOS (using Homebrew):**
+   ```bash
+   brew install redis
+   brew services start redis
+   ```
+   
+   **Ubuntu/Debian:**
+   ```bash
+   sudo apt update
+   sudo apt install redis-server
+   sudo systemctl start redis-server
+   ```
+   
+   **Windows (using Docker):**
+   ```bash
+   docker run --name redis -p 6379:6379 -d redis
+   ```
+
+4. **Verify Redis installation**
+   ```bash
+   redis-cli ping
+   # Should respond with: PONG
+   ```
+
+5. **Start the application**
+   ```bash
+   npm run start:dev
+   ```
+
+## 📚 API Documentation
+
+### Base URL
+```
+http://localhost:3000/messages
 ```
 
-## Compile and run the project
+### 📝 Create Message
+Create a new message with optional priority.
+
+**POST** `/messages`
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+curl -X POST http://localhost:3000/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Process this important task",
+    "priority": "high"
+  }'
 ```
 
-## Run tests
+**Request Body:**
+```typescript
+{
+  content: string;      // Message content (required)
+  priority?: string;    // "urgent" | "high" | "normal" | "low" (default: "normal")
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Message added to queue",
+  "data": {
+    "id": "msg_1234567890_abc123",
+    "content": "Process this important task",
+    "priority": "high",
+    "status": "pending",
+    "timestamp": "2025-05-22T10:30:00.000Z",
+    "retryCount": 0
+  }
+}
+```
+
+### 📊 Get All Messages
+Retrieve all messages from all priority queues.
+
+**GET** `/messages`
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+curl http://localhost:3000/messages
 ```
 
-## Deployment
+### 🎯 Get Messages by Priority
+Get messages from a specific priority queue.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+**GET** `/messages/priority/{priority}`
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl http://localhost:3000/messages/priority/urgent
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### ⚡ Process Next Message
+Get the next highest-priority message for processing.
 
-## Resources
+**GET** `/messages/next`
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+curl http://localhost:3000/messages/next
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "message": {
+      "id": "msg_1234567890_abc123",
+      "content": "Process this important task",
+      "priority": "high",
+      "status": "processing",
+      "timestamp": "2025-05-22T10:30:00.000Z",
+      "processingStartTime": "2025-05-22T10:35:00.000Z",
+      "retryCount": 0
+    },
+    "queueStats": {
+      "totalMessages": 15,
+      "pendingMessages": 8,
+      "processingMessages": 2,
+      "completedMessages": 4,
+      "failedMessages": 1,
+      "priorityBreakdown": {
+        "urgent": 2,
+        "high": 3,
+        "normal": 2,
+        "low": 1
+      },
+      "uniqueMessageIds": 15
+    }
+  }
+}
+```
 
-## Support
+### ✅ Complete Message
+Mark a message as completed or failed.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+**PUT** `/messages/{messageId}/complete?success={true|false}`
 
-## Stay in touch
+```bash
+# Mark as completed
+curl -X PUT "http://localhost:3000/messages/msg_1234567890_abc123/complete?success=true"
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# Mark as failed
+curl -X PUT "http://localhost:3000/messages/msg_1234567890_abc123/complete?success=false"
+```
 
-## License
+### 🔄 Retry Failed Message
+Retry a failed message (if retry count < 3).
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+**PUT** `/messages/{messageId}/retry`
+
+```bash
+curl -X PUT http://localhost:3000/messages/msg_1234567890_abc123/retry
+```
+
+### 📈 Get Queue Statistics
+Get comprehensive queue statistics.
+
+**GET** `/messages/stats`
+
+```bash
+curl http://localhost:3000/messages/stats
+```
+
+### 🧹 Clear Completed Messages
+Remove all completed messages from the system.
+
+**DELETE** `/messages/completed`
+
+```bash
+curl -X DELETE http://localhost:3000/messages/completed
+```
+
+### 💥 Purge All Queues
+Clear all messages and reset the system (use with caution).
+
+**DELETE** `/messages/all`
+
+```bash
+curl -X DELETE http://localhost:3000/messages/all
+```
+
+## 🏗️ Architecture
+
+### Redis Data Structures Used
+
+1. **Lists** (`queue:*`): Store messages for each priority level
+   - `queue:urgent` - Urgent priority messages
+   - `queue:high` - High priority messages
+   - `queue:normal` - Normal priority messages
+   - `queue:low` - Low priority messages
+
+2. **Sets** (`*_messages`, `unique_message_ids`): Track message states and prevent duplicates
+   - `unique_message_ids` - All message IDs ever created
+   - `processing_messages` - Currently processing messages
+   - `completed_messages` - Successfully completed messages
+   - `failed_messages` - Failed messages
+   - `content_hashes:{priority}` - Content hashes for duplicate detection
+
+### Message Processing Flow
+
+```
+1. Message Created → PENDING (added to priority queue)
+2. Message Retrieved → PROCESSING (moved to processing set)
+3. Message Completed → COMPLETED/FAILED (moved to completion set)
+4. Failed Message → Can be retried (moved back to queue)
+```
+
+### Priority Processing Order
+
+Messages are processed in the following priority order:
+1. URGENT
+2. HIGH  
+3. NORMAL
+4. LOW
+
+## 🔧 Redis Commands Reference
+
+Explore the Redis data directly using Redis CLI:
+
+```bash
+redis-cli
+
+# Check different priority queues
+LRANGE queue:urgent 0 -1
+LRANGE queue:high 0 -1
+LRANGE queue:normal 0 -1
+LRANGE queue:low 0 -1
+
+# Check message tracking sets
+SMEMBERS unique_message_ids
+SMEMBERS processing_messages
+SMEMBERS completed_messages
+SMEMBERS failed_messages
+
+# Get queue lengths
+LLEN queue:urgent
+LLEN queue:high
+LLEN queue:normal
+LLEN queue:low
+
+# Get set sizes
+SCARD unique_message_ids
+SCARD processing_messages
+```
+
+## 📊 Message Data Structure
+
+```typescript
+interface MessageData {
+  id: string;                    // Unique message identifier
+  content: string;               // Message content
+  timestamp: string;             // Creation timestamp (ISO string)
+  priority: MessagePriority;     // Message priority level
+  status: MessageStatus;         // Current message status
+  retryCount?: number;           // Number of retry attempts
+  processingStartTime?: string;  // When processing started
+  completedTime?: string;        // When processing completed
+  error?: string;                // Error message if failed
+}
+```
+
+## 🚨 Error Handling
+
+The system includes comprehensive error handling:
+
+- **Duplicate Detection**: Prevents adding duplicate message content
+- **Type Safety**: Runtime validation of message data
+- **Graceful Failures**: Malformed JSON is handled safely
+- **Retry Logic**: Failed messages can be automatically retried
+- **Proper HTTP Status Codes**: RESTful error responses
+
+## 🧪 Testing Examples
+
+### Basic Workflow Test
+
+```bash
+# 1. Create messages with different priorities
+curl -X POST http://localhost:3000/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Urgent task", "priority":"urgent"}'
+
+curl -X POST http://localhost:3000/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Normal task", "priority":"normal"}'
+
+# 2. Check statistics
+curl http://localhost:3000/messages/stats
+
+# 3. Process next message (should get urgent first)
+curl http://localhost:3000/messages/next
+
+# 4. Complete the message (extract message ID from step 3)
+curl -X PUT "http://localhost:3000/messages/{MESSAGE_ID}/complete?success=true"
+
+# 5. Check updated statistics
+curl http://localhost:3000/messages/stats
+```
+
+## 🛡️ Security Considerations
+
+- Input validation on all endpoints
+- Type-safe JSON parsing with validation
+- Proper error handling without information leakage
+- Redis connection error handling
+
+## 🚀 Performance Features
+
+- **In-Memory Operations**: Redis provides sub-millisecond response times
+- **Atomic Operations**: All Redis operations are atomic
+- **Efficient Data Structures**: Uses optimal Redis data types for each use case
+- **Connection Pooling**: Single Redis connection per application instance
+
+## 📝 Environment Configuration
+
+Create a `.env` file for custom configuration:
+
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=your_password_if_needed
+APP_PORT=3000
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new features
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 🙋‍♂️ Support
+
+For questions and support, please open an issue in the repository.
+
+---
+
+**Built with ❤️ using NestJS and Redis** - Ladoxer
