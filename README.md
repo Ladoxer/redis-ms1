@@ -22,8 +22,8 @@ A sophisticated message queue system built with NestJS and Redis, featuring prio
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd redis-message-queue
+   git clone https://github.com/Ladoxer/redis-ms1
+   cd redis-ms1
    ```
 
 2. **Install dependencies**
