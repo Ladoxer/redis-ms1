@@ -41,7 +41,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async del(key: string): Promise<number> {
     return await this.redisClient.del(key);
   }
-  
+
   // === ENHANCED LIST OPERATIONS ===
   
   // Add to head of list
@@ -176,5 +176,92 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   // Get time to live
   async ttl(key: string): Promise<number> {
     return await this.redisClient.ttl(key);
+  }
+
+  // === HASH OPERATIONS ===
+
+  // Set field in hash
+  async hset(key: string, field: string, value: string): Promise<number> {
+    return await this.redisClient.hset(key, field, value);
+  }
+
+  // Set multiple fields in hash
+  async hmset(key: string, fieldValues: Record<string, string>): Promise<string> {
+    const args: string[] = [];
+    for (const [field, value] of Object.entries(fieldValues)) {
+      args.push(field, value);
+    }
+    return await this.redisClient.hmset(key, ...args);
+  }
+
+  // Get field from hash
+  async hget(key: string, field: string): Promise<string | null> {
+    return await this.redisClient.hget(key, field);
+  }
+
+  // Get multiple fields from hash
+  async hmget(key: string, fields: string[]): Promise<(string | null)[]> {
+    return await this.redisClient.hmget(key, ...fields);
+  }
+
+  // Get all fields and values from hash
+  async hgetall(key: string): Promise<Record<string, string>> {
+    return await this.redisClient.hgetall(key);
+  }
+
+  // Check if field exists in hash
+  async hexists(key: string, field: string): Promise<number> {
+    return await this.redisClient.hexists(key, field);
+  }
+
+  // Delete field from hash
+  async hdel(key: string, field: string | string[]): Promise<number> {
+    if (Array.isArray(field)) {
+      return await this.redisClient.hdel(key, ...field);
+    }
+    return await this.redisClient.hdel(key, field);
+  }
+
+  // Get all field names from hash
+  async hkeys(key: string): Promise<string[]> {
+    return await this.redisClient.hkeys(key);
+  }
+
+  // Get all values from hash
+  async hvals(key: string): Promise<string[]> {
+    return await this.redisClient.hvals(key);
+  }
+
+  // Get number of fields in hash
+  async hlen(key: string): Promise<number> {
+    return await this.redisClient.hlen(key);
+  }
+
+  // Increment field value in hash
+  async hincrby(key: string, field: string, increment: number): Promise<number> {
+    return await this.redisClient.hincrby(key, field, increment);
+  }
+
+  // Increment field value by float in hash
+  async hincrbyfloat(key: string, field: string, increment: number): Promise<string> {
+    return await this.redisClient.hincrbyfloat(key, field, increment);
+  }
+
+  // Set field only if it doesn't exist
+  async hsetnx(key: string, field: string, value: string): Promise<number> {
+    return await this.redisClient.hsetnx(key, field, value);
+  }
+
+  // Scan hash fields (for large hashes)
+  async hscan(key: string, cursor: number, pattern?: string, count?: number): Promise<[string, string[]]> {
+    if (pattern && count) {
+      return await this.redisClient.hscan(key, cursor, 'MATCH', pattern, 'COUNT', count);
+    } else if (pattern) {
+      return await this.redisClient.hscan(key, cursor, 'MATCH', pattern);
+    } else if (count) {
+      return await this.redisClient.hscan(key, cursor, 'COUNT', count);
+    } else {
+      return await this.redisClient.hscan(key, cursor);
+    }
   }
 }
