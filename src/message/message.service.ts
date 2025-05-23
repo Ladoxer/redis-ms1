@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
+import { UserService } from '../user/user.service';
 import { 
   MessageData, 
   CreateMessageDto, 
@@ -51,14 +52,29 @@ export class MessageService {
   private readonly processingMessages = 'processing_messages';
   private readonly completedMessages = 'completed_messages';
   private readonly failedMessages = 'failed_messages';
+  private readonly userMessagesKey = (userId: string) => `user:messages:${userId}`;
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly userService?: UserService  // Make optional to avoid circular dependency
+  ) {}
 
   async enqueueMessage(createMessageDto: CreateMessageDto): Promise<MessageData> {
-    const { content, priority = MessagePriority.NORMAL } = createMessageDto;
+    const { content, priority = MessagePriority.NORMAL, userId } = createMessageDto;
     
     // Generate unique message ID
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Get user info if userId is provided
+    let username: string | undefined;
+    if (userId && this.userService) {
+      const user = await this.userService.getUserById(userId);
+      if (user) {
+        username = user.username;
+        // Update user stats
+        await this.userService.incrementUserStat(userId, 'totalMessagesSent');
+      }
+    }
     
     // Check if this message content already exists (duplicate detection)
     const contentHash = Buffer.from(content).toString('base64');
@@ -79,6 +95,8 @@ export class MessageService {
       status: MessageStatus.PENDING,
       timestamp: new Date().toISOString(),
       retryCount: 0,
+      userId,
+      username,
     };
 
     // Add to appropriate priority queue
@@ -91,7 +109,12 @@ export class MessageService {
     // Track content hash to prevent duplicates
     await this.redisService.sadd(`content_hashes:${priority}`, contentHash);
 
-    this.logger.log(`Message enqueued: ${messageId} with priority: ${priority}`);
+    // Associate message with user if userId provided
+    if (userId) {
+      await this.redisService.sadd(this.userMessagesKey(userId), messageId);
+    }
+
+    this.logger.log(`Message enqueued: ${messageId} with priority: ${priority}${userId ? ` by user: ${username}` : ''}`);
     return message;
   }
 
@@ -116,6 +139,11 @@ export class MessageService {
           message.status = MessageStatus.PROCESSING;
           message.processingStartTime = new Date().toISOString();
           
+          // Update user stats if message has userId
+          if (message.userId && this.userService) {
+            await this.userService.incrementUserStat(message.userId, 'totalMessagesProcessed');
+          }
+          
           // Add to processing set
           await this.redisService.sadd(
             this.processingMessages, 
@@ -124,7 +152,7 @@ export class MessageService {
 
           const queueStats = await this.getQueueStats();
           
-          this.logger.log(`Processing message: ${message.id}`);
+          this.logger.log(`Processing message: ${message.id}${message.username ? ` by user: ${message.username}` : ''}`);
           return { message, queueStats };
         } else {
           this.logger.error(`Failed to parse message: ${messageJson}`);
@@ -152,6 +180,15 @@ export class MessageService {
         // Update message status
         message.status = success ? MessageStatus.COMPLETED : MessageStatus.FAILED;
         message.completedTime = new Date().toISOString();
+        
+        // Update user stats if message has userId
+        if (message.userId && this.userService) {
+          if (success) {
+            await this.userService.incrementUserStat(message.userId, 'totalCompletedMessages');
+          } else {
+            await this.userService.incrementUserStat(message.userId, 'totalFailedMessages');
+          }
+        }
         
         // Add to appropriate completion set
         const targetSet = success ? this.completedMessages : this.failedMessages;
@@ -279,5 +316,80 @@ export class MessageService {
     }
     
     this.logger.log('All queues purged');
+  }
+
+  async getMessagesByUser(userId: string): Promise<MessageData[]> {
+    // Get all message IDs for this user
+    const messageIds = await this.redisService.smembers(this.userMessagesKey(userId));
+    const userMessages: MessageData[] = [];
+
+    // Search for messages in all queues and states
+    const allSources = [
+      ...Object.values(this.queueKeys),
+      this.processingMessages,
+      this.completedMessages,
+      this.failedMessages,
+    ];
+
+    for (const source of allSources) {
+      const messages = await this.redisService.smembers(source).catch(() => 
+        this.redisService.lrange(source)  // Try as list if set fails
+      );
+
+      for (const msgJson of messages) {
+        const message = parseMessageSafely(msgJson);
+        if (message && message.userId === userId && messageIds.includes(message.id)) {
+          userMessages.push(message);
+        }
+      }
+    }
+
+    return userMessages;
+  }
+
+  async getUserMessageStats(userId: string): Promise<{
+    total: number;
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    byPriority: Record<MessagePriority, number>;
+  }> {
+    const userMessages = await this.getMessagesByUser(userId);
+    
+    const stats = {
+      total: userMessages.length,
+      pending: 0,
+      processing: 0,
+      completed: 0,
+      failed: 0,
+      byPriority: {
+        [MessagePriority.URGENT]: 0,
+        [MessagePriority.HIGH]: 0,
+        [MessagePriority.NORMAL]: 0,
+        [MessagePriority.LOW]: 0,
+      },
+    };
+
+    userMessages.forEach(message => {
+      switch (message.status) {
+        case MessageStatus.PENDING:
+          stats.pending++;
+          break;
+        case MessageStatus.PROCESSING:
+          stats.processing++;
+          break;
+        case MessageStatus.COMPLETED:
+          stats.completed++;
+          break;
+        case MessageStatus.FAILED:
+          stats.failed++;
+          break;
+      }
+      
+      stats.byPriority[message.priority]++;
+    });
+
+    return stats;
   }
 }

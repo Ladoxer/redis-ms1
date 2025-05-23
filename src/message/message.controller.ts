@@ -49,6 +49,27 @@ export class MessageController {
     }
   }
 
+  @Post('user/:userId')
+  async createMessageForUser(
+    @Param('userId') userId: string,
+    @Body() createMessageDto: Omit<CreateMessageDto, 'userId'>
+  ) {
+    try {
+      const message = await this.messageService.enqueueMessage({
+        ...createMessageDto,
+        userId,
+      });
+      return {
+        success: true,
+        message: 'Message added to queue for user',
+        data: message,
+      };
+    } catch (error: unknown) {
+      const errorMessage = getErrorMessage(error);
+      throw new HttpException(errorMessage, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Get()
   async getAllMessages(): Promise<{
     success: boolean;

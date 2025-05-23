@@ -4,6 +4,8 @@ export interface MessageData {
   timestamp: string;
   priority: MessagePriority;
   status: MessageStatus;
+  userId?: string;
+  username?: string;
   retryCount?: number;
   processingStartTime?: string;
   completedTime?: string;
@@ -42,6 +44,7 @@ export enum MessageStatus {
 export interface CreateMessageDto {
   content: string;
   priority?: MessagePriority;
+  userId?: string;
 }
 
 export interface QueueStats {
