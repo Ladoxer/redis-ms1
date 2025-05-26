@@ -264,4 +264,170 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return await this.redisClient.hscan(key, cursor);
     }
   }
+
+  // === SORTED SET OPERATIONS ===
+
+  // Add member to sorted set with score
+  async zadd(key: string, score: number, member: string): Promise<number> {
+    return await this.redisClient.zadd(key, score, member);
+  }
+
+  // Add multiple members to sorted set
+  async zaddMultiple(key: string, scoreMembers: Array<{score: number, member: string}>): Promise<number> {
+    const args: (string | number)[] = [];
+    scoreMembers.forEach(({score, member}) => {
+      args.push(score, member);
+    });
+    return await this.redisClient.zadd(key, ...args);
+  }
+
+  // Get score of member in sorted set
+  async zscore(key: string, member: string): Promise<string | null> {
+    return await this.redisClient.zscore(key, member);
+  }
+
+  // Get rank of member (0-based, lowest to highest score)
+  async zrank(key: string, member: string): Promise<number | null> {
+    return await this.redisClient.zrank(key, member);
+  }
+
+  // Get reverse rank of member (0-based, highest to lowest score)
+  async zrevrank(key: string, member: string): Promise<number | null> {
+    return await this.redisClient.zrevrank(key, member);
+  }
+
+  // Get range of members by rank (ascending order)
+  async zrange(key: string, start: number, stop: number, withScores?: boolean): Promise<string[]> {
+    if (withScores) {
+      return await this.redisClient.zrange(key, start, stop, 'WITHSCORES');
+    }
+    return await this.redisClient.zrange(key, start, stop);
+  }
+
+  // Get range of members by rank (descending order)
+  async zrevrange(key: string, start: number, stop: number, withScores?: boolean): Promise<string[]> {
+    if (withScores) {
+      return await this.redisClient.zrevrange(key, start, stop, 'WITHSCORES');
+    }
+    return await this.redisClient.zrevrange(key, start, stop);
+  }
+
+  // Get range of members by score
+  async zrangebyscore(key: string, min: string | number, max: string | number, withScores?: boolean, limit?: {offset: number, count: number}): Promise<string[]> {
+    if (withScores && limit) {
+      return await this.redisClient.zrangebyscore(key, min, max, 'WITHSCORES', 'LIMIT', limit.offset, limit.count);
+    } else if (withScores) {
+      return await this.redisClient.zrangebyscore(key, min, max, 'WITHSCORES');
+    } else if (limit) {
+      return await this.redisClient.zrangebyscore(key, min, max, 'LIMIT', limit.offset, limit.count);
+    } else {
+      return await this.redisClient.zrangebyscore(key, min, max);
+    }
+  }
+
+  // Get range of members by score (descending order)
+  async zrevrangebyscore(key: string, max: string | number, min: string | number, withScores?: boolean, limit?: {offset: number, count: number}): Promise<string[]> {
+    if (withScores && limit) {
+      return await this.redisClient.zrevrangebyscore(key, max, min, 'WITHSCORES', 'LIMIT', limit.offset, limit.count);
+    } else if (withScores) {
+      return await this.redisClient.zrevrangebyscore(key, max, min, 'WITHSCORES');
+    } else if (limit) {
+      return await this.redisClient.zrevrangebyscore(key, max, min, 'LIMIT', limit.offset, limit.count);
+    } else {
+      return await this.redisClient.zrevrangebyscore(key, max, min);
+    }
+  }
+
+  // Count members in score range
+  async zcount(key: string, min: string | number, max: string | number): Promise<number> {
+    return await this.redisClient.zcount(key, min, max);
+  }
+
+  // Get sorted set size
+  async zcard(key: string): Promise<number> {
+    return await this.redisClient.zcard(key);
+  }
+
+  // Remove member from sorted set
+  async zrem(key: string, member: string | string[]): Promise<number> {
+    if (Array.isArray(member)) {
+      return await this.redisClient.zrem(key, ...member);
+    }
+    return await this.redisClient.zrem(key, member);
+  }
+
+  // Remove members by rank range
+  async zremrangebyrank(key: string, start: number, stop: number): Promise<number> {
+    return await this.redisClient.zremrangebyrank(key, start, stop);
+  }
+
+  // Remove members by score range
+  async zremrangebyscore(key: string, min: string | number, max: string | number): Promise<number> {
+    return await this.redisClient.zremrangebyscore(key, min, max);
+  }
+
+  // Increment score of member
+  async zincrby(key: string, increment: number, member: string): Promise<string> {
+    return await this.redisClient.zincrby(key, increment, member);
+  }
+
+  // Get members with scores between ranks
+  async zrangeWithScores(key: string, start: number, stop: number): Promise<Array<{member: string, score: number}>> {
+    const result = await this.zrange(key, start, stop, true);
+    const parsed: Array<{member: string, score: number}> = [];
+    
+    for (let i = 0; i < result.length; i += 2) {
+      parsed.push({
+        member: result[i],
+        score: parseFloat(result[i + 1])
+      });
+    }
+    
+    return parsed;
+  }
+
+  // Get members with scores in reverse order
+  async zrevrangeWithScores(key: string, start: number, stop: number): Promise<Array<{member: string, score: number}>> {
+    const result = await this.zrevrange(key, start, stop, true);
+    const parsed: Array<{member: string, score: number}> = [];
+    
+    for (let i = 0; i < result.length; i += 2) {
+      parsed.push({
+        member: result[i],
+        score: parseFloat(result[i + 1])
+      });
+    }
+    
+    return parsed;
+  }
+
+  // Union sorted sets
+  async zunionstore(destination: string, keys: string[], weights?: number[]): Promise<number> {
+    if (weights) {
+      return await this.redisClient.zunionstore(destination, keys.length, ...keys, 'WEIGHTS', ...weights);
+    } else {
+      return await this.redisClient.zunionstore(destination, keys.length, ...keys);
+    }
+  }
+  // Intersect sorted sets
+  async zinterstore(destination: string, keys: string[], weights?: number[]): Promise<number> {
+    if (weights) {
+      return await this.redisClient.zinterstore(destination, keys.length, ...keys, 'WEIGHTS', ...weights);
+    } else {
+      return await this.redisClient.zinterstore(destination, keys.length, ...keys);
+    }
+  }
+
+  // Scan sorted set (for large sorted sets)
+  async zscan(key: string, cursor: number, pattern?: string, count?: number): Promise<[string, string[]]> {
+    if (pattern && count) {
+      return await this.redisClient.zscan(key, cursor, 'MATCH', pattern, 'COUNT', count);
+    } else if (pattern) {
+      return await this.redisClient.zscan(key, cursor, 'MATCH', pattern);
+    } else if (count) {
+      return await this.redisClient.zscan(key, cursor, 'COUNT', count);
+    } else {
+      return await this.redisClient.zscan(key, cursor);
+    }
+  }
 }
