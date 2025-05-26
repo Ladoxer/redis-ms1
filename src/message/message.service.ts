@@ -9,6 +9,7 @@ import {
   QueueStats,
   ProcessedMessage 
 } from './message.interface';
+import { AnalyticsService } from 'src/analytics/analytics.service';
 
 // Type guard functions for safe JSON parsing
 function isMessageData(obj: unknown): obj is MessageData {
@@ -56,7 +57,8 @@ export class MessageService {
 
   constructor(
     private readonly redisService: RedisService,
-    private readonly userService?: UserService  // Make optional to avoid circular dependency
+    private readonly userService?: UserService,
+    private readonly analyticsService?: AnalyticsService
   ) {}
 
   async enqueueMessage(createMessageDto: CreateMessageDto): Promise<MessageData> {
@@ -112,6 +114,17 @@ export class MessageService {
     // Associate message with user if userId provided
     if (userId) {
       await this.redisService.sadd(this.userMessagesKey(userId), messageId);
+    }
+
+    // Track message content for analytics
+    if (this.analyticsService) {
+      await this.analyticsService.trackMessageContent(content, messageId, priority);
+    }
+
+    // Update user leaderboard
+    if (userId && this.analyticsService) {
+      await this.analyticsService.updateUserLeaderboard(userId, 'messagesSent', 1);
+      await this.analyticsService.updateUserLeaderboard(userId, 'overallActivity', 1);
     }
 
     this.logger.log(`Message enqueued: ${messageId} with priority: ${priority}${userId ? ` by user: ${username}` : ''}`);
@@ -185,8 +198,26 @@ export class MessageService {
         if (message.userId && this.userService) {
           if (success) {
             await this.userService.incrementUserStat(message.userId, 'totalCompletedMessages');
+            // Update analytics leaderboards
+            if (this.analyticsService) {
+              await this.analyticsService.updateUserLeaderboard(message.userId, 'messagesCompleted', 1);
+              
+              // Calculate and record processing time if available
+              if (message.processingStartTime) {
+                const processingTime = new Date(message.completedTime).getTime() - 
+                                    new Date(message.processingStartTime).getTime();
+                await this.analyticsService.recordProcessingTime(message.id, processingTime);
+                
+                // Update processing speed leaderboard (inverse of processing time for ranking)
+                const speedScore = Math.max(0, 10000 - processingTime); // Higher score for faster processing
+                await this.analyticsService.updateUserLeaderboard(message.userId, 'processingSpeed', speedScore);
+              }
+            }
           } else {
             await this.userService.incrementUserStat(message.userId, 'totalFailedMessages');
+            if (this.analyticsService) {
+              await this.analyticsService.updateUserLeaderboard(message.userId, 'messagesFailed', 1);
+            }
           }
         }
         
