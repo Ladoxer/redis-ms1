@@ -10,6 +10,8 @@ import {
   ProcessedMessage 
 } from './message.interface';
 import { AnalyticsService } from 'src/analytics/analytics.service';
+import { NotificationService } from 'src/notification/notification.service';
+import { NotificationType } from 'src/notification/notification.interface';
 
 // Type guard functions for safe JSON parsing
 function isMessageData(obj: unknown): obj is MessageData {
@@ -58,7 +60,8 @@ export class MessageService {
   constructor(
     private readonly redisService: RedisService,
     private readonly userService?: UserService,
-    private readonly analyticsService?: AnalyticsService
+    private readonly analyticsService?: AnalyticsService,
+    private readonly notificationService?: NotificationService,
   ) {}
 
   async enqueueMessage(createMessageDto: CreateMessageDto): Promise<MessageData> {
@@ -127,6 +130,17 @@ export class MessageService {
       await this.analyticsService.updateUserLeaderboard(userId, 'overallActivity', 1);
     }
 
+    if (this.notificationService) {
+      await this.notificationService.publishMessageNotification({
+        type: NotificationType.MESSAGE_CREATED,
+        messageId,
+        messageContent: content,
+        priority,
+        userId,
+        username,
+      });
+    }
+
     this.logger.log(`Message enqueued: ${messageId} with priority: ${priority}${userId ? ` by user: ${username}` : ''}`);
     return message;
   }
@@ -162,6 +176,17 @@ export class MessageService {
             this.processingMessages, 
             JSON.stringify(message)
           );
+
+          if (this.notificationService) {
+            await this.notificationService.publishMessageNotification({
+              type: NotificationType.MESSAGE_PROCESSING,
+              messageId: message.id,
+              messageContent: message.content,
+              priority: message.priority,
+              userId: message.userId,
+              username: message.username,
+            });
+          }
 
           const queueStats = await this.getQueueStats();
           
@@ -224,6 +249,23 @@ export class MessageService {
         // Add to appropriate completion set
         const targetSet = success ? this.completedMessages : this.failedMessages;
         await this.redisService.sadd(targetSet, JSON.stringify(message));
+
+        if (this.notificationService) {
+          const processingTime = message.processingStartTime && message.completedTime
+            ? new Date(message.completedTime).getTime() - new Date(message.processingStartTime).getTime()
+            : undefined;
+
+          await this.notificationService.publishMessageNotification({
+            type: success ? NotificationType.MESSAGE_COMPLETED : NotificationType.MESSAGE_FAILED,
+            messageId: message.id,
+            messageContent: message.content,
+            priority: message.priority,
+            userId: message.userId,
+            username: message.username,
+            processingTime,
+            error: success ? undefined : message.error,
+          });
+        }
         
         this.logger.log(`Message ${messageId} marked as ${message.status}`);
         return;
