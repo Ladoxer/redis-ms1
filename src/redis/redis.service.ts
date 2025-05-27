@@ -430,4 +430,161 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return await this.redisClient.zscan(key, cursor);
     }
   }
+
+  // === PUBLISH/SUBSCRIBE OPERATIONS ===
+
+  // Publish message to channel
+  async publish(channel: string, message: string): Promise<number> {
+    return await this.redisClient.publish(channel, message);
+  }
+
+  // Subscribe to channels (returns subscriber client)
+  createSubscriber(): Redis {
+    return new Redis({
+      host: 'localhost',
+      port: 6379,
+    });
+  }
+
+  // Subscribe to specific channels
+  async subscribe(subscriber: Redis, channels: string[]): Promise<void> {
+    await subscriber.subscribe(...channels);
+  }
+
+  // Subscribe to channel patterns
+  async psubscribe(subscriber: Redis, patterns: string[]): Promise<void> {
+    await subscriber.psubscribe(...patterns);
+  }
+
+  // Unsubscribe from channels
+  async unsubscribe(subscriber: Redis, channels?: string[]): Promise<void> {
+    if (channels) {
+      await subscriber.unsubscribe(...channels);
+    } else {
+      await subscriber.unsubscribe();
+    }
+  }
+
+  // Unsubscribe from patterns
+  async punsubscribe(subscriber: Redis, patterns?: string[]): Promise<void> {
+    if (patterns) {
+      await subscriber.punsubscribe(...patterns);
+    } else {
+      await subscriber.punsubscribe();
+    }
+  }
+
+  // Get active channels
+  async pubsubChannels(pattern?: string): Promise<string[]> {
+    if (pattern) {
+      const result = await this.redisClient.pubsub('CHANNELS', pattern);
+      return Array.isArray(result) ? result.map(String) : [];
+    }
+    const result = await this.redisClient.pubsub('CHANNELS');
+    return Array.isArray(result) ? result.map(String) : [];
+  }
+
+  // Get number of subscribers for channels
+  async pubsubNumsub(channels: string[]): Promise<Array<[string, number]>> {
+    const result = await this.redisClient.pubsub('NUMSUB', ...channels);
+    const parsed: Array<[string, number]> = [];
+    
+    if (Array.isArray(result)) {
+      for (let i = 0; i < result.length; i += 2) {
+        const channel = String(result[i]);
+        const count = parseInt(String(result[i + 1]), 10) || 0;
+        parsed.push([channel, count]);
+      }
+    }
+    
+    return parsed;
+  }
+
+  // Get number of pattern subscribers
+  async pubsubNumpat(): Promise<number> {
+    const result = await this.redisClient.pubsub('NUMPAT');
+    if (Array.isArray(result)) {
+      return parseInt(String(result[0]), 10) || 0;
+    }
+    return parseInt(String(result), 10) || 0;
+  }
+
+  // === STREAMS OPERATIONS (Bonus: Modern alternative to Pub/Sub) ===
+
+  // Add entry to stream
+  async xadd(key: string, id: string, fields: Record<string, string>): Promise<string | null> {
+    const args: string[] = [];
+    for (const [field, value] of Object.entries(fields)) {
+      args.push(field, value);
+    }
+    return await this.redisClient.xadd(key, id, ...args);
+  }
+
+  // Read from streams
+  async xread(streams: Record<string, string>, count?: number, block?: number): Promise<Array<[string, Array<[string, string[]]>]> | null> {
+    try {
+      if (count && block !== undefined) {
+        const result = await this.redisClient.xread('COUNT', count, 'BLOCK', block, 'STREAMS', ...Object.keys(streams), ...Object.values(streams));
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else if (count) {
+        const result = await this.redisClient.xread('COUNT', count, 'STREAMS', ...Object.keys(streams), ...Object.values(streams));
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else if (block !== undefined) {
+        const result = await this.redisClient.xread('BLOCK', block, 'STREAMS', ...Object.keys(streams), ...Object.values(streams));
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else {
+        const result = await this.redisClient.xread('STREAMS', ...Object.keys(streams), ...Object.values(streams));
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      }
+    } catch (error) {
+      this.logger.error('Error in xread:', error);
+      return null;
+    }
+  }
+
+  // Get stream length
+  async xlen(key: string): Promise<number> {
+    return await this.redisClient.xlen(key);
+  }
+
+  // Create consumer group
+  async xgroupCreate(key: string, groupName: string, id: string, mkstream?: boolean): Promise<string> {
+    try {
+      if (mkstream) {
+        const result = await this.redisClient.xgroup('CREATE', key, groupName, id, 'MKSTREAM');
+        return String(result);
+      } else {
+        const result = await this.redisClient.xgroup('CREATE', key, groupName, id);
+        return String(result);
+      }
+    } catch (error) {
+      this.logger.error('Error in xgroupCreate:', error);
+      throw error;
+    }
+  }
+
+  // Read from consumer group
+  async xreadgroup(groupName: string, consumerName: string, streams: Record<string, string>, count?: number, block?: number): Promise<Array<[string, Array<[string, string[]]>]> | null> {
+    try {
+      const streamNames = Object.keys(streams);
+      const streamIds = Object.values(streams);
+
+      if (count && block !== undefined) {
+        const result = await this.redisClient.xreadgroup('GROUP', groupName, consumerName, 'COUNT', count, 'BLOCK', block, 'STREAMS', ...streamNames, ...streamIds);
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else if (count) {
+        const result = await this.redisClient.xreadgroup('GROUP', groupName, consumerName, 'COUNT', count, 'STREAMS', ...streamNames, ...streamIds);
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else if (block !== undefined) {
+        const result = await this.redisClient.xreadgroup('GROUP', groupName, consumerName, 'BLOCK', block, 'STREAMS', ...streamNames, ...streamIds);
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      } else {
+        const result = await this.redisClient.xreadgroup('GROUP', groupName, consumerName, 'STREAMS', ...streamNames, ...streamIds);
+        return result as Array<[string, Array<[string, string[]]>]> | null;
+      }
+    } catch (error) {
+      this.logger.error('Error in xreadgroup:', error);
+      return null;
+    }
+  }
 }
