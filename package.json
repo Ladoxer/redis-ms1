@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",
+    "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "vercel-build": "npm run build"
   },
