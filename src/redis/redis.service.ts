@@ -8,10 +8,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async onModuleInit() {
-    this.redisClient = new Redis({
-      host: 'localhost',
-      port: 6379,
-    });
+    // this.redisClient = new Redis({
+    //   host: 'localhost',
+    //   port: 6379,
+    // });
+    this.redisClient = new Redis("rediss://default:AT8cAAIjcDEwNTdhNGUyM2YxZjc0OThhYWI3YjI5Y2VjNjU4ZGM0ZHAxMA@decent-sheepdog-16156.upstash.io:6379");
     
     this.redisClient.on('error', (err) => {
       this.logger.error('Redis connection error:', err);
